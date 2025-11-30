@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Weather App</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the app */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; 
+        }
+
+        /* Canvas for Live Background Graphics */
+        #weather-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; 
+            z-index: 1; 
+        }
+
+        /* Mobile Frame Styling */
+        .mobile-frame {
+            position: relative;
+            z-index: 10;
+            /* Mimics a standard large mobile phone screen width */
+            width: 100%;
+            max-width: 400px; 
+            height: 100vh; /* Takes full viewport height */
+            max-height: 800px; /* Max height to fit within typical desktop view */
+            margin: auto;
+            border-radius: 2.5rem; /* Large rounded corners for the device look */
+            background: #1f2937; /* Darker background for the bezel effect */
+            box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6), inset 0 0 10px rgba(255, 255, 255, 0.05);
+            overflow: hidden; /* Contains the internal scrollable content */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Main Content Container (scrollable) */
+        .weather-content {
+            flex-grow: 1;
+            padding: 1.5rem;
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(5px); 
+            overflow-y: auto; /* Allows content to scroll if it exceeds screen height */
+            border-radius: 0 0 2rem 2rem;
+        }
+
+        /* Status Bar Styling */
+        .status-bar {
+            padding: 0.5rem 1rem;
+            background: #111827; /* Dark header */
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        /* Loading spinner CSS */
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #34d399; /* Green color */
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <!-- Canvas for Live Graphics (fixed behind everything) -->
+    <canvas id="weather-canvas"></canvas>
+
+    <!-- Mobile Device Frame -->
+    <div class="mobile-frame">
+        
+        <!-- Status Bar (Mobile Header) -->
+        <div class="status-bar">
+            <span id="current-time">9:41 AM</span>
+            <span class="flex items-center space-x-1">
+                <!-- Wifi Icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.5 13c-1.93 0-3.79-.35-5.5-.95l.54 1.63c2.04.68 4.29 1.05 6.46 1.05v-1.73zM15 11c-1.6 0-3.09-.32-4.5-.95l.54 1.63c1.67.56 3.49.87 5.06.87V11zm-5.69-2.67l.54 1.63c1.23.41 2.58.64 3.97.64v-1.73c-1.12 0-2.18-.18-3.08-.49zM6.92 6.33c-.78-.26-1.58-.4-2.39-.4V7.6c.64 0 1.25.1 1.83.3l-.54-1.57zM2 17v-1c4.52 0 8.79-1.29 12.5-3.56l-.68-1.56C10.74 12.92 6.55 14 2 14v-1c4.95 0 9.53-1.28 13.5-3.56l.68 1.56C11.96 11.9 6.94 13 2 13v-1zm4.92-5.67c-.64-.22-1.27-.33-1.89-.33v1c.47 0 .93.07 1.38.2l-.49-1.07zm-2.03-.66c-.32-.1-.63-.15-.94-.15v1c.23 0 .47.03.7.1l-.7-.1z"/>
+                </svg>
+                <!-- Battery Icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15 4h-2V2h-2v2H9c-.55 0-1 .45-1 1v16c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V5c0-.55-.45-1-1-1zm-2 15h-2v-2h2v2zm0-4h-2v-2h2v2z"/>
+                </svg>
+            </span>
+        </div>
+
+        <!-- Weather Application Content (Scrollable) -->
+        <div class="weather-content text-white">
+            <h1 class="text-xl font-semibold text-center mb-6 text-gray-300">Weather</h1>
+
+            <!-- Search Input -->
+            <div class="flex space-x-2 mb-8">
+                <input type="text" id="city-input" placeholder="Search city..."
+                       class="flex-grow p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-400 transition duration-300 shadow-inner">
+                <button id="search-btn"
+                        class="p-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg transition duration-300 transform hover:scale-105">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Weather Display Area -->
+            <div id="weather-display" class="text-center">
+                <div id="loading-indicator" class="hidden flex justify-center items-center py-10">
+                    <div class="loader"></div>
+                </div>
+                
+                <p id="message" class="text-gray-400 text-base py-16">
+                    Enter a city or enable location services to see the forecast.
+                </p>
+
+                <!-- Current Weather Card (Hidden by default) -->
+                <div id="current-weather" class="hidden">
+                    
+                    <!-- Location and Primary Info -->
+                    <p id="location-name" class="text-4xl font-light mb-1 text-white"></p>
+                    <p id="description" class="text-xl font-medium mb-4 text-blue-300"></p>
+
+                    <div class="flex flex-col items-center justify-center mb-8">
+                        <!-- Temperature and Icon Stack -->
+                        <img id="weather-icon" src="" alt="Weather Icon" class="w-24 h-24">
+                        <div class="flex items-start">
+                            <p id="temperature" class="text-8xl font-thin"></p>
+                            <span class="text-4xl font-light mt-4">&deg;C</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Details Grid -->
+                    <div class="grid grid-cols-2 gap-4 text-sm mt-8 p-4 bg-gray-800 rounded-xl shadow-inner">
+                        <div class="flex flex-col items-center p-3 border-r border-gray-700">
+                            <p class="font-light text-gray-400">Humidity</p>
+                            <p id="humidity" class="text-lg font-medium"></p>
+                        </div>
+                        <div class="flex flex-col items-center p-3">
+                            <p class="font-light text-gray-400">Wind Speed</p>
+                            <p id="wind-speed" class="text-lg font-medium"></p>
+                        </div>
+                        <!-- Add more details for a realistic app feel -->
+                         <div class="flex flex-col items-center p-3 border-r border-gray-700 border-t">
+                            <p class="font-light text-gray-400">Pressure</p>
+                            <p id="pressure" class="text-lg font-medium">-- hPa</p>
+                        </div>
+                        <div class="flex flex-col items-center p-3 border-t">
+                            <p class="font-light text-gray-400">Feels Like</p>
+                            <p id="feels-like" class="text-lg font-medium">--&deg;C</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript for Functionality and Live Graphics -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // ==============================================================================
+            // !!! IMPORTANT: PASTE YOUR OPENWEATHERMAP API KEY HERE to make the app work !!!
+            // ==============================================================================
+            const apiKey = "f4b53684f5b70e00fba6976e8c24ec74"; 
+            
+            const apiUrl = 'https://api.openweathermap.org/data/2.5/weather';
+
+            const cityInput = document.getElementById('city-input');
+            const searchBtn = document.getElementById('search-btn');
+            const messageEl = document.getElementById('message');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const currentWeatherEl = document.getElementById('current-weather');
+            
+            // Display elements
+            const locationNameEl = document.getElementById('location-name');
+            const temperatureEl = document.getElementById('temperature');
+            const descriptionEl = document.getElementById('description');
+            const humidityEl = document.getElementById('humidity');
+            const windSpeedEl = document.getElementById('wind-speed');
+            const weatherIconEl = document.getElementById('weather-icon');
+            const pressureEl = document.getElementById('pressure');
+            const feelsLikeEl = document.getElementById('feels-like');
+
+            // --- Utility Functions ---
+            
+            // Update mobile status bar time
+            const updateTime = () => {
+                const now = new Date();
+                const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                document.getElementById('current-time').textContent = timeString.replace(' ', '');
+            };
+            updateTime();
+            setInterval(updateTime, 60000); // Update every minute
+
+            /**
+             * Converts temperature from Kelvin to Celsius.
+             * @param {number} k - Temperature in Kelvin.
+             * @returns {number} Temperature in Celsius, rounded to the nearest integer.
+             */
+            const kelvinToCelsius = (k) => Math.round(k - 273.15);
+
+            /**
+             * Handles exponential backoff for retries.
+             * @param {Function} fn - The function to execute.
+             * @param {Array} args - Arguments for the function.
+             * @param {number} retries - Current retry count.
+             */
+            async function retryWithBackoff(fn, args, retries = 0) {
+                try {
+                    return await fn(...args);
+                } catch (error) {
+                    if (retries >= 3) {
+                        throw error;
+                    }
+                    const delay = Math.pow(2, retries) * 1000 + Math.random() * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return retryWithBackoff(fn, args, retries + 1);
+                }
+            }
+
+
+            // --- Weather Fetching and Display ---
+
+            async function fetchWeather(city, isGeo = false) {
+                if (!city && !isGeo) return;
+
+                if (apiKey === "PASTE_YOUR_ACTUAL_API_KEY_HERE" || apiKey.length < 10) {
+                    displayError("Please set a valid OpenWeatherMap API key in the code.");
+                    return;
+                }
+                
+                // Show loading state
+                messageEl.classList.add('hidden');
+                currentWeatherEl.classList.add('hidden');
+                loadingIndicator.classList.remove('hidden');
+
+                let url;
+                if (isGeo) {
+                    url = `${apiUrl}?lat=${city.lat}&lon=${city.lon}&appid=${apiKey}`;
+                } else {
+                    url = `${apiUrl}?q=${city}&appid=${apiKey}`;
+                }
+
+                try {
+                    const response = await retryWithBackoff(fetch, [url]);
+                    const data = await response.json();
+
+                    if (data.cod !== 200) {
+                        throw new Error(data.message || "City not found or API error.");
+                    }
+
+                    displayWeather(data);
+                } catch (error) {
+                    displayError(`Error: ${error.message}. Please try again.`);
+                } finally {
+                    loadingIndicator.classList.add('hidden');
+                }
+            }
+
+            function displayWeather(data) {
+                const tempC = kelvinToCelsius(data.main.temp);
+                const feelsLikeC = kelvinToCelsius(data.main.feels_like);
+                const descriptionText = data.weather[0].description;
+                const iconCode = data.weather[0].icon;
+
+                locationNameEl.textContent = `${data.name}, ${data.sys.country}`;
+                temperatureEl.textContent = tempC;
+                descriptionEl.textContent = descriptionText.charAt(0).toUpperCase() + descriptionText.slice(1);
+                humidityEl.textContent = `${data.main.humidity}%`;
+                windSpeedEl.textContent = `${data.wind.speed.toFixed(1)} m/s`;
+                pressureEl.textContent = `${data.main.pressure} hPa`;
+                feelsLikeEl.textContent = `${feelsLikeC}°C`;
+
+                weatherIconEl.src = `https://openweathermap.org/img/wn/${iconCode}@4x.png`; // Using 4x for better mobile visual
+                weatherIconEl.alt = descriptionText;
+                
+                // Update UI visibility
+                messageEl.classList.add('hidden');
+                currentWeatherEl.classList.remove('hidden');
+
+                // Trigger the canvas update based on weather 
+                updateCanvasEffect(data.weather[0].id);
+            }
+
+            function displayError(errorMessage) {
+                currentWeatherEl.classList.add('hidden');
+                messageEl.textContent = errorMessage;
+                messageEl.classList.remove('hidden');
+                // Reset canvas effect to default
+                updateCanvasEffect(800); 
+            }
+
+            // --- Event Listeners ---
+
+            const handleSearch = () => {
+                const city = cityInput.value.trim();
+                if (city) {
+                    fetchWeather(city);
+                }
+            };
+
+            searchBtn.addEventListener('click', handleSearch);
+            cityInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleSearch();
+                }
+            });
+
+            // --- Geolocation for Initial Load (Optional) ---
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    
+                    if (apiKey === "PASTE_YOUR_ACTUAL_API_KEY_HERE" || apiKey.length < 10) {
+                         messageEl.textContent = "Please set your API key to enable location weather on load.";
+                         return;
+                    }
+
+                    // Fetch using coordinates
+                    fetchWeather({ lat, lon }, true);
+
+                }, (error) => {
+                    messageEl.textContent = "Location access denied or failed. Please search for a city.";
+                });
+            }
+
+
+            // ===================================================
+            // --- Live Graphics Integration (Canvas Animation) ---
+            // ===================================================
+
+            const canvas = document.getElementById('weather-canvas');
+            const ctx = canvas.getContext('2d');
+            let particles = [];
+            let particleSettings = {
+                count: 80,
+                color: 'rgba(100, 150, 255, 0.4)', 
+                speed: 0.5,
+                size: 2,
+                type: 'default' // 'rain', 'snow', 'default'
+            };
+            
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                initParticles();
+            }
+
+            // Particle constructor
+            function Particle(x, y, size, color, velocity) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.color = color;
+                this.velocity = velocity;
+            }
+
+            Particle.prototype.draw = function() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            };
+
+            Particle.prototype.update = function() {
+                this.x += this.velocity.x;
+                this.y += this.velocity.y;
+
+                // Handle boundary (wrap around)
+                if (this.x > canvas.width + this.size) this.x = -this.size;
+                if (this.x < -this.size) this.x = canvas.width + this.size;
+                
+                // For a more rain/snow-like effect, reset if off bottom
+                if ((particleSettings.type === 'rain' || particleSettings.type === 'snow') && this.y > canvas.height) {
+                    this.y = -this.size;
+                    this.x = Math.random() * canvas.width; 
+                }
+                
+                // For 'default' (faint glow/stars), just wrap Y
+                if (particleSettings.type === 'default' && this.y > canvas.height) {
+                    this.y = -this.size;
+                }
+
+
+                this.draw();
+            };
+            
+            // Initialization function
+            function initParticles() {
+                particles = [];
+                for (let i = 0; i < particleSettings.count; i++) {
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * canvas.height;
+                    const size = Math.random() * (particleSettings.size / 2) + particleSettings.size * 0.5;
+
+                    let velocity = { x: 0, y: particleSettings.speed };
+
+                    if (particleSettings.type === 'rain') {
+                        velocity.x = -0.5 * particleSettings.speed; 
+                    } else if (particleSettings.type === 'snow') {
+                        velocity.x = (Math.random() - 0.5) * 0.5;
+                        velocity.y = particleSettings.speed * 0.7;
+                    }
+                    
+                    particles.push(new Particle(x, y, size, particleSettings.color, velocity));
+                }
+            }
+
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+                // Clear the canvas with a slight trail effect (lower alpha for smoother movement)
+                ctx.fillStyle = 'rgba(13, 17, 23, 0.1)'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                particles.forEach(particle => {
+                    particle.update();
+                });
+            }
+            
+            /**
+             * Updates the canvas effect based on OpenWeatherMap's condition code.
+             * @param {number} weatherId - The ID code from the weather API (e.g., 800 for clear).
+             */
+            function updateCanvasEffect(weatherId) {
+                // Weather condition categories (simplified):
+                // 5xx: Rain
+                // 6xx: Snow
+                // 800: Clear
+                // 80x: Clouds
+
+                if (weatherId >= 500 && weatherId < 600) { // Rain
+                    particleSettings.count = 250;
+                    particleSettings.color = 'rgba(128, 179, 255, 0.7)'; 
+                    particleSettings.speed = 6;
+                    particleSettings.size = 1.2;
+                    particleSettings.type = 'rain';
+                } else if (weatherId >= 600 && weatherId < 700) { // Snow
+                    particleSettings.count = 120;
+                    particleSettings.color = 'rgba(255, 255, 255, 0.9)'; 
+                    particleSettings.speed = 1.5;
+                    particleSettings.size = 3.5;
+                    particleSettings.type = 'snow';
+                } else if (weatherId === 800) { // Clear
+                    particleSettings.count = 50;
+                    particleSettings.color = 'rgba(255, 255, 200, 0.3)'; 
+                    particleSettings.speed = 0.05;
+                    particleSettings.size = 1.5;
+                    particleSettings.type = 'default';
+                } else { // Clouds / Default
+                    particleSettings.count = 80;
+                    particleSettings.color = 'rgba(150, 200, 255, 0.4)'; 
+                    particleSettings.speed = 0.5;
+                    particleSettings.size = 2;
+                    particleSettings.type = 'default';
+                }
+                
+                initParticles();
+            }
+
+            // Initialize and start graphics
+            resizeCanvas(); 
+            animate();
+            
+            // Re-initialize/resize on window resize
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Set initial canvas effect (default cloudy look)
+            updateCanvasEffect(802);
+        });
+    </script>
+</body>
+</html>
